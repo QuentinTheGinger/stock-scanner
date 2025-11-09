@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+venv311/
+.env
+.venv/
+
+# Data & cache
+data/history/
+data/fundamentals/
+models_saved/
+*.parquet
+*.csv
+*.json
+
+# System & IDE
+.DS_Store
+.idea/
+.vscode/
+*.log
