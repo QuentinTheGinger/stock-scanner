@@ -817,5 +817,5 @@ def main():
     else:
         print("\\nℹ️ Speichern deaktiviert (CONFIG['save_predictions']=False)")
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
