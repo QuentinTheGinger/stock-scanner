@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Aktien-Analyse Dashboard</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="container">
+      <h1>Aktien-Analyse Dashboard</h1>
+      <div class="status">
+        <span id="run-indicator">Lade Status…</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="controls">
+      <form method="post" action="/start">
+        <input type="hidden" name="trigger" value="manual" />
+        <button class="btn primary" type="submit" id="start-btn">Analyse manuell starten</button>
+      </form>
+      <div class="schedule">
+        <h3>Geplanter Zeitplan</h3>
+        <ul>
+          <li>08:00 CET — vor EU-Marktöffnung</li>
+          <li>15:30 CET — vor US-Marktöffnung</li>
+          <li>17:30 CET — 2h nach US-Start</li>
+        </ul>
+      </div>
+      <div class="runtime-info">
+        <strong>Aktueller Run:</strong>
+        <div id="runtime">lade…</div>
+      </div>
+    </section>
+
+    <section class="tables">
+      <h2>Letzte 6 Analysen</h2>
+      <table>
+        <thead><tr><th>Zeit</th><th>Trigger</th><th>Accuracy</th><th>Mean 5-day</th><th>Backtest</th></tr></thead>
+        <tbody id="results-tbody">
+        {% for r in results %}
+          <tr>
+            <td>{{ r.timestamp }}</td>
+            <td>{{ r.triggered_by }}</td>
+            <td>{{ r.get('accuracy', '—') }}</td>
+            <td>{{ r.get('mean_5_day_return', '—') }}</td>
+            <td>{% if r.backtest and r.backtest != 'none' %}✅{% else %}none{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <footer class="footer container">
+    <small>Frontend: weiß + orange • Status aktualisiert automatisch</small>
+  </footer>
+
+<script>
+async function loadStatus(){
+  try{
+    const res = await fetch('/status');
+    const j = await res.json();
+    const ind = document.getElementById('run-indicator');
+    const runtime = document.getElementById('runtime');
+    if(j.running){
+      ind.textContent = "Analyse läuft (gestartet: "+(j.start_time||'n/a')+")";
+      ind.className = "running";
+      runtime.textContent = "Läuft — gestarted: "+(j.start_time||'n/a');
+      document.getElementById('start-btn').disabled = true;
+    } else {
+      ind.textContent = "Keine Analyse aktiv";
+      ind.className = "idle";
+      runtime.textContent = "Keine";
+      document.getElementById('start-btn').disabled = false;
+    }
+  }catch(e){
+    console.error(e);
+  }
+}
+setInterval(loadStatus, 5000);
+loadStatus();
+</script>
+</body>
+</html>

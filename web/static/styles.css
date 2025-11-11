@@ -1,0 +1,22 @@
+:root{
+  --orange: #ff8800;
+  --white: #ffffff;
+  --dark: #222;
+  --muted: #666;
+}
+*{box-sizing:border-box}
+body{font-family:Inter,system-ui,Arial,Helvetica,sans-serif;background:var(--white);color:var(--dark);margin:0;padding:0}
+.container{max-width:1100px;margin:0 auto;padding:18px}
+.topbar{background:var(--orange);color:var(--white);padding:14px 0}
+.topbar h1{margin:0;font-size:1.2rem}
+.controls{display:flex;gap:18px;align-items:flex-start;margin:18px 0}
+.btn{padding:10px 14px;border-radius:8px;border:0;cursor:pointer}
+.btn.primary{background:var(--orange);color:var(--white);font-weight:600}
+.schedule, .runtime-info{background:#fff;border:1px solid #eee;padding:12px;border-radius:8px}
+.tables h2{margin-top:6px}
+table{width:100%;border-collapse:collapse;margin-top:12px}
+thead th{background:#f7f7f7;text-align:left;padding:8px;border-bottom:1px solid #eee}
+tbody td{padding:10px;border-bottom:1px solid #fafafa}
+.footer{padding:18px;text-align:center;color:var(--muted);border-top:1px solid #f0f0f0;margin-top:20px}
+.running{font-weight:700}
+.idle{opacity:0.9}
