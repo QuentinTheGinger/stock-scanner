@@ -6,9 +6,17 @@ from fastapi.templating import Jinja2Templates
 import threading, json, os, sys, traceback, datetime
 from typing import Optional
 
-# Pfad für Hauptskript
+# damit dein Hauptskript gefunden wird
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from analysispredict_next5_FIXED import main as run_pipeline
+
+# removed top-level import of heavy analysis script to avoid long startup
+def get_run_pipeline():
+    # importiere erst beim tatsächlichen Start der Analyse
+    import importlib, os, sys
+    # ensure parent dir on sys.path (already done above, but keep safe)
+    sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+    mod = importlib.import_module("analysispredict_next5_FIXED")
+    return getattr(mod, "main")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "..", "data")
@@ -44,7 +52,9 @@ def _run_analysis(triggered_by="manual"):
         status = {"running": True, "start_time": datetime.datetime.utcnow().isoformat() + "Z"}
         write_json(STATUS_FILE, status)
     try:
+        run_pipeline = get_run_pipeline()
         result = run_pipeline()
+
         record = {
             "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
             "triggered_by": triggered_by,
