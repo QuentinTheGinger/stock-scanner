@@ -1,20 +1,11 @@
 # worker.py
-import os
-import sys
-import json
-import traceback
-import datetime
-import time
-from apscheduler.schedulers.blocking import BlockingScheduler
+import os, sys, json, traceback, threading, datetime
+from fastapi import FastAPI, BackgroundTasks
+from fastapi.responses import JSONResponse
+
+from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pytz
-import threading
-
-# damit dein Hauptskript gefunden wird
-sys.path.append(os.path.dirname(__file__))
-
-# dein existierendes Script
-from analysispredict_next5_FIXED import main as run_pipeline
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -48,13 +39,19 @@ def write_status(d):
         json.dump(d, f, default=str)
 
 def run_once(triggered_by="scheduled"):
+    """Lazy import to reduce startup time & RAM"""
     with _lock:
         st = datetime.datetime.utcnow().isoformat() + "Z"
         write_status({"running": True, "start_time": st, "triggered_by": triggered_by, "note": None})
     try:
+        # Lazy import pipeline
+        sys.path.append(BASE_DIR)
+        from analysispredict_next5_FIXED import main as run_pipeline
+
         start_local = datetime.datetime.now().isoformat()
-        print(f"[worker] Starting run ({triggered_by}) at {start_local}")
+        print(f"[worker] Starting run ({triggered_by}) at {start_local}", flush=True)
         result = run_pipeline()
+
         rec = {
             "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
             "triggered_by": triggered_by,
@@ -65,7 +62,7 @@ def run_once(triggered_by="scheduled"):
             rec["mean_5_day_return"] = result.get("mean_5_day_return")
             rec["backtest"] = result.get("backtest", None)
         append_result(rec)
-        print(f"[worker] Run finished ({triggered_by})")
+        print(f"[worker] Run finished ({triggered_by})", flush=True)
     except Exception as e:
         tb = traceback.format_exc()
         append_result({
@@ -74,33 +71,60 @@ def run_once(triggered_by="scheduled"):
             "error": str(e),
             "traceback": tb
         })
-        print("[worker] Run failed:", e)
+        print("[worker] Run failed:", e, flush=True)
     finally:
         with _lock:
             write_status({"running": False, "start_time": None, "triggered_by": None, "note": None})
 
-# Scheduler config: times in CET (Europe/Berlin)
+# ---------------------------
+# Scheduler (optional)
+# ---------------------------
 tz = pytz.timezone("Europe/Berlin")
-sched = BlockingScheduler(timezone=tz)
+sched = BackgroundScheduler(timezone=tz)
+sched.add_job(lambda: threading.Thread(target=run_once, args=("08:00_CET",), daemon=True).start(),
+              CronTrigger(hour=8, minute=0, timezone=tz))
+sched.add_job(lambda: threading.Thread(target=run_once, args=("15:30_CET",), daemon=True).start(),
+              CronTrigger(hour=15, minute=30, timezone=tz))
+sched.add_job(lambda: threading.Thread(target=run_once, args=("17:30_CET",), daemon=True).start(),
+              CronTrigger(hour=17, minute=30, timezone=tz))
+sched.add_job(lambda: print(f"[worker] heartbeat {datetime.datetime.utcnow().isoformat()}"), 'interval', minutes=30)
+sched.start()
 
-# deine gewünschten Termine (ungefähr fertig sein sollen)
-# 08:00 CET (vor EU-Opening)
-sched.add_job(lambda: run_once("08:00_CET"), CronTrigger(hour=8, minute=0, timezone=tz))
+# ---------------------------
+# FastAPI server
+# ---------------------------
+app = FastAPI(title="Analysis Worker")
 
-# 15:30 CET (vor US-Opening)
-sched.add_job(lambda: run_once("15:30_CET"), CronTrigger(hour=15, minute=30, timezone=tz))
+@app.get("/healthz")
+def healthz():
+    return {"ok": True}
 
-# 17:30 CET (2h nach US-start; US open ≈ 15:30 CET)
-sched.add_job(lambda: run_once("17:30_CET"), CronTrigger(hour=17, minute=30, timezone=tz))
+@app.post("/trigger")
+def trigger(background_tasks: BackgroundTasks, mode: str = "manual"):
+    with _lock:
+        try:
+            with open(STATUS_FILE, "r", encoding="utf-8") as f:
+                status = json.load(f)
+            if status.get("running"):
+                return JSONResponse({"status": "already_running", "start_time": status.get("start_time")}, status_code=409)
+        except Exception:
+            pass
+    threading.Thread(target=run_once, args=(mode,), daemon=True).start()
+    return {"status": "scheduled", "triggered_by": mode}
 
-# also optional: einmal am Tag ein Cleanup / Heartbeat
-def heartbeat():
-    print("[worker] heartbeat", datetime.datetime.now().isoformat())
-sched.add_job(heartbeat, 'interval', minutes=30)
+@app.get("/status")
+def api_status():
+    with open(STATUS_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
 
+@app.get("/results")
+def api_results():
+    return {"results": read_results()[:20]}
+
+# ---------------------------
+# Main block für Render
+# ---------------------------
 if __name__ == "__main__":
-    print("[worker] Scheduler starting. Press Ctrl+C to exit.")
-    try:
-        sched.start()
-    except (KeyboardInterrupt, SystemExit):
-        print("[worker] Scheduler stopped.")
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("worker:app", host="0.0.0.0", port=port)
