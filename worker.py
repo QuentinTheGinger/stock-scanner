@@ -124,32 +124,36 @@ def run_once(triggered_by: str = "scheduled"):
         except Exception as e:
             raise RuntimeError(f"Failed importing analysis pipeline: {e}")
 
-        # Run pipeline (this may take a while)
-        pipeline_result = run_pipeline()  # expected to be dict {"status":"ok","summary":..., "predictions_path":...}
+        # Run pipeline
+        pipeline_result = run_pipeline()
         result_record["result"] = pipeline_result
 
-        # copy common summary fields for quick glance
+        # copy common summary values
         if isinstance(pipeline_result, dict):
             summary = pipeline_result.get("summary", {})
             result_record["summary"] = summary
-            # pick accuracy / mean_5_day_return if present
             for k in ("accuracy", "mean_5_day_return", "backtest_mean_5d_return"):
                 if k in summary:
                     result_record[k] = summary.get(k)
 
-        # try to save predictions JSON for frontend convenience
+        # Save predictions file
         try:
             saved = _save_predictions_from_result(pipeline_result)
-            if saved:
-                result_record["predictions_saved"] = True
-            else:
-                result_record["predictions_saved"] = False
+            result_record["predictions_saved"] = bool(saved)
         except Exception as e:
             result_record["predictions_saved"] = False
             print("[worker] error saving predictions:", e, flush=True)
 
         append_result(result_record)
         print(f"[worker] Run finished ({triggered_by})", flush=True)
+
+        # 🟢🟢🟢 NEUER BLOCK — Upload ans Frontend 🟢🟢🟢
+        try:
+            upload_results_to_frontend(result_record)
+        except Exception as e:
+            print("[worker] upload_results_to_frontend failed:", e, flush=True)
+        # 🟢🟢🟢 ENDE NEUER BLOCK 🟢🟢🟢
+
     except Exception as e:
         tb = traceback.format_exc()
         print("[worker] Run failed:", str(e), flush=True)
@@ -158,13 +162,48 @@ def run_once(triggered_by: str = "scheduled"):
         result_record["traceback"] = tb
         append_result(result_record)
     finally:
-        # free memory and update status
         try:
             gc.collect()
         except Exception:
             pass
         with _lock:
             _update_status(False, None, note=None)
+
+
+
+# -------------------------------------------------------------------------
+# 🔵🔵🔵 HIER beginnt der NEUE FUNKTIONSBLOCK 🔵🔵🔵
+# -------------------------------------------------------------------------
+import requests
+
+FRONTEND_URL = os.environ.get("FRONTEND_URL")  # e.g. https://quantivest-lzrd.onrender.com
+UPLOAD_ENDPOINT = "/api/upload_results"
+UPLOAD_TIMEOUT = 20
+
+
+def upload_results_to_frontend(record: Dict[str, Any]):
+    """Send latest run results + summary to the frontend dashboard."""
+    if not FRONTEND_URL:
+        print("[worker] FRONTEND_URL not set – skipping upload", flush=True)
+        return
+
+    url = FRONTEND_URL.rstrip("/") + UPLOAD_ENDPOINT
+    try:
+        payload = {
+            "timestamp": record.get("timestamp"),
+            "trigger": record.get("triggered_by", "unknown"),
+            "summary": record.get("summary", {}),
+            "results": read_json_file(RESULTS_FILE, []),
+        }
+
+        r = requests.post(url, json=payload, timeout=UPLOAD_TIMEOUT)
+        if r.status_code == 200:
+            print("[worker] Successfully uploaded results to frontend", flush=True)
+        else:
+            print(f"[worker] Frontend upload failed ({r.status_code}): {r.text}", flush=True)
+
+    except Exception as e:
+        print("[worker] Upload exception:", e, flush=True)
 
 # ---------------------------
 # Scheduler setup

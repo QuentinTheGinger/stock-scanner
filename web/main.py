@@ -163,6 +163,47 @@ def healthz():
     # verify basic startup (always returns ok)
     return {"ok": True, "worker_url": WORKER_URL or None}
 
+# -------------------------------------------------------------------------
+# NEW: Endpoint where the worker uploads completed analysis results
+# -------------------------------------------------------------------------
+@app.post("/api/upload_results")
+async def upload_results(request: Request):
+    """
+    Wird vom Worker aufgerufen nachdem eine Analyse fertig ist.
+    Speichert Ergebnisse und Status lokal im Frontend.
+    """
+    try:
+        body = await request.json()
+
+        # 1) Ergebnisse speichern
+        results = body.get("results", [])
+        summary = body.get("summary", {})
+
+        with open(RESULTS_FILE, "w", encoding="utf-8") as f:
+            json.dump(results, f, indent=2)
+
+        # 2) Status aktualisieren
+        status_data = {
+            "running": False,
+            "start_time": summary.get("start_time"),
+            "end_time": summary.get("timestamp"),
+            "runtime_seconds": summary.get("runtime_seconds"),
+            "trigger": summary.get("trigger", "auto"),
+            "accuracy": summary.get("accuracy"),
+            "mean_5_day_return": summary.get("mean_5_day_return")
+        }
+
+        with open(STATUS_FILE, "w", encoding="utf-8") as f:
+            json.dump(status_data, f, indent=2)
+
+        log.info("Frontend hat neue Analyse-Ergebnisse gespeichert.")
+
+        return {"ok": True}
+
+    except Exception as e:
+        log.error(f"upload_results failed: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
 # run via `uvicorn web.main:app` in production (Render)
 if __name__ == "__main__":
     import uvicorn
