@@ -154,6 +154,7 @@ def download_history_for_ticker(ticker: str, years_back: int = 1, start_date: st
     """Downloads historical OHLCV for a single ticker using yfinance (if available). Returns DataFrame or None."""
     if yf is None:
         return None
+
     end = datetime.now()
     if start_date:
         try:
@@ -162,27 +163,32 @@ def download_history_for_ticker(ticker: str, years_back: int = 1, start_date: st
             start = end - timedelta(days=365 * years_back)
     else:
         start = end - timedelta(days=365 * years_back)
-    try:
-    from yfinance import Ticker
 
-    # Render-kompatibler Daten-Loader (yf.download funktioniert dort nicht)
-    ticker_obj = Ticker(ticker)
-    df = ticker_obj.history(period="1y", interval="1d", auto_adjust=True)
-    
-    # falls Yahoo keine Daten zurückgibt → sauber abbrechen
-    if df is None or df.empty:
-        raise ValueError(f"No price data returned for ticker {ticker}")
+    try:
+        # Render-kompatibler Daten-Loader (Ticker.history statt yf.download)
+        ticker_obj = yf.Ticker(ticker)
+        df = ticker_obj.history(period="1y", interval="1d", auto_adjust=True)
+
+        # falls Yahoo keine Daten zurückgibt → abbrechen
         if df is None or df.empty:
-            return None
+            raise ValueError(f"No price data returned for ticker {ticker}")
+
+        # Reset Index + Spalten normalisieren
         df = df.reset_index().rename(columns=str.lower)
+
+        # falls das Datum nicht korrekt heißt
         if "date" not in df.columns:
             df = df.rename(columns={df.columns[0]: "date"})
+
         df["symbol"] = ticker
-        # ensure columns we expect exist
-        for c in ["open","high","low","close","volume","date","symbol"]:
+
+        # ensure required columns exist
+        for c in ["open", "high", "low", "close", "volume", "date", "symbol"]:
             if c not in df.columns:
                 df[c] = pd.NA
-        return df[["date","open","high","low","close","volume","symbol"]]
+
+        return df[["date", "open", "high", "low", "close", "volume", "symbol"]]
+
     except Exception as e:
         if CONFIG["verbose"]:
             print(f"⚠️ yfinance download failed for {ticker}: {e}")
