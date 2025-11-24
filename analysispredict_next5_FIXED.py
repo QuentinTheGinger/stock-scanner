@@ -163,7 +163,15 @@ def download_history_for_ticker(ticker: str, years_back: int = 1, start_date: st
     else:
         start = end - timedelta(days=365 * years_back)
     try:
-        df = yf.download(ticker, start=start, end=end, progress=False, threads=False, auto_adjust=True)
+    from yfinance import Ticker
+
+    # Render-kompatibler Daten-Loader (yf.download funktioniert dort nicht)
+    ticker_obj = Ticker(ticker)
+    df = ticker_obj.history(period="1y", interval="1d", auto_adjust=True)
+    
+    # falls Yahoo keine Daten zurückgibt → sauber abbrechen
+    if df is None or df.empty:
+        raise ValueError(f"No price data returned for ticker {ticker}")
         if df is None or df.empty:
             return None
         df = df.reset_index().rename(columns=str.lower)
