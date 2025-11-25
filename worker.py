@@ -171,21 +171,59 @@ def run_once(triggered_by: str = "scheduled"):
 
 
 
-# -------------------------------------------------------------------------
-# 🔵🔵🔵 HIER beginnt der NEUE FUNKTIONSBLOCK 🔵🔵🔵
-# -------------------------------------------------------------------------
-import requests
-
-FRONTEND_URL = os.environ.get("FRONTEND_URL")  # e.g. https://quantivest-lzrd.onrender.com
-UPLOAD_ENDPOINT = "/api/upload_results"
-UPLOAD_TIMEOUT = 20
-
-
 def upload_results_to_frontend(record: Dict[str, Any]):
     """Send latest run results + summary to the frontend dashboard."""
     if not FRONTEND_URL:
         print("[worker] FRONTEND_URL not set – skipping upload", flush=True)
         return
+
+    # Try to load predictions from known locations (predictions JSON or CSV)
+    preds = []
+    try:
+        # first attempt: PREDICTIONS_JSON if exists (worker may save JSON)
+        if os.path.exists(PREDICTIONS_JSON):
+            preds = read_json_file(PREDICTIONS_JSON, [])
+        else:
+            # fallback: try CSV in repo output folder
+            csv_path = os.path.join(os.path.dirname(BASE_DIR), "output", "predictions_next5d_classification.csv")
+            if os.path.exists(csv_path):
+                import csv
+                with open(csv_path, "r", encoding="utf-8") as fh:
+                    reader = csv.DictReader(fh)
+                    for r in reader:
+                        # normalize numeric fields
+                        for k in list(r.keys()):
+                            try:
+                                if r[k] is not None and r[k] != "":
+                                    # keep symbol as string
+                                    if k not in ("symbol", "date", "strength"):
+                                        r[k] = float(r[k])
+                            except Exception:
+                                pass
+                        preds.append(r)
+    except Exception as e:
+        print("[worker] failed to read predictions for upload:", e, flush=True)
+
+    # Build "top30" according to: highest p_up and lowest risk_score
+    top_list = []
+    try:
+        dfp = None
+        if preds:
+            import pandas as _pd
+            dfp = _pd.DataFrame(preds)
+            # try to ensure numeric columns exist
+            for col in ["p_up", "risk_score"]:
+                if col not in dfp.columns:
+                    dfp[col] = _pd.NA
+            # coerce numeric
+            dfp["p_up"] = pd.to_numeric(dfp["p_up"], errors="coerce").fillna(0.0)
+            dfp["risk_score"] = pd.to_numeric(dfp["risk_score"], errors="coerce").fillna(9999.0)
+            # sort primary by p_up desc, secondary by risk_score asc
+            dfp = dfp.sort_values(["p_up", "risk_score"], ascending=[False, True])
+            top_df = dfp.head(30)
+            top_list = top_df.to_dict(orient="records")
+    except Exception as e:
+        print("[worker] failed to build top_list:", e, flush=True)
 
     url = FRONTEND_URL.rstrip("/") + UPLOAD_ENDPOINT
     try:
@@ -194,6 +232,7 @@ def upload_results_to_frontend(record: Dict[str, Any]):
             "trigger": record.get("triggered_by", "unknown"),
             "summary": record.get("summary", {}),
             "results": read_json_file(RESULTS_FILE, []),
+            "predictions": top_list,
         }
 
         r = requests.post(url, json=payload, timeout=UPLOAD_TIMEOUT)

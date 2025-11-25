@@ -163,24 +163,32 @@ def healthz():
     # verify basic startup (always returns ok)
     return {"ok": True, "worker_url": WORKER_URL or None}
 
-# -------------------------------------------------------------------------
-# NEW: Endpoint where the worker uploads completed analysis results
-# -------------------------------------------------------------------------
+PREDICTIONS_FILE = os.path.join(DATA_DIR, "predictions.json")
+
 @app.post("/api/upload_results")
 async def upload_results(request: Request):
     """
     Wird vom Worker aufgerufen nachdem eine Analyse fertig ist.
-    Speichert Ergebnisse und Status lokal im Frontend.
+    Speichert Ergebnisse, Status und Predictions lokal im Frontend.
     """
     try:
         body = await request.json()
 
-        # 1) Ergebnisse speichern
+        # 1) Ergebnisse speichern (run history / metadata)
         results = body.get("results", [])
         summary = body.get("summary", {})
 
         with open(RESULTS_FILE, "w", encoding="utf-8") as f:
             json.dump(results, f, indent=2)
+
+        # 1b) Predictions (Top list) speichern, falls mitgesendet
+        preds = body.get("predictions")
+        if preds is not None:
+            try:
+                with open(PREDICTIONS_FILE, "w", encoding="utf-8") as f:
+                    json.dump(preds, f, indent=2, default=str)
+            except Exception as e:
+                log.warning("failed to save predictions file: %s", e)
 
         # 2) Status aktualisieren
         status_data = {
@@ -197,7 +205,6 @@ async def upload_results(request: Request):
             json.dump(status_data, f, indent=2)
 
         log.info("Frontend hat neue Analyse-Ergebnisse gespeichert.")
-
         return {"ok": True}
 
     except Exception as e:

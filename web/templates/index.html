@@ -39,7 +39,11 @@
     <section class="tables">
       <h2>Letzte 6 Analysen</h2>
       <table>
-        <thead><tr><th>Zeit</th><th>Trigger</th><th>Accuracy</th><th>Mean 5-day</th><th>Backtest</th></tr></thead>
+        <thead>
+          <tr>
+            <th>Zeit</th><th>Trigger</th><th>Accuracy</th><th>Mean 5-day</th><th>Backtest</th>
+          </tr>
+        </thead>
         <tbody id="results-tbody">
         {% for r in results %}
           <tr>
@@ -53,6 +57,29 @@
         </tbody>
       </table>
     </section>
+
+    <!-- ⭐ NEUE TOP-30 SEKTION -->
+    <section id="top-stocks" class="tables" style="margin-top:40px;">
+      <h2>Top 30 Empfehlungen (low risk, high upside)</h2>
+      <div class="table-container">
+        <table id="top-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Symbol</th>
+              <th>p_up</th>
+              <th>Risk (score)</th>
+              <th>Strength</th>
+              <th>Datum</th>
+            </tr>
+          </thead>
+          <tbody id="top-tbody">
+            <tr><td colspan="6">Lade…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
   </main>
 
   <footer class="footer container">
@@ -83,6 +110,69 @@ async function loadStatus(){
 }
 setInterval(loadStatus, 5000);
 loadStatus();
+
+
+// ⭐ Neuer Code: Top-30 Predictions laden
+async function loadPredictions(){
+  try{
+    const res = await fetch('/predictions');
+    const j = await res.json();
+    const tbody = document.getElementById('top-tbody');
+    tbody.innerHTML = '';
+
+    let rows = [];
+
+    // mehrere mögliche Formate unterstützen
+    if(j && j.predictions){
+      rows = j.predictions;
+    } else if(Array.isArray(j)){
+      rows = j;
+    }
+
+    if(!rows || rows.length === 0){
+      tbody.innerHTML = '<tr><td colspan="6">Keine Vorhersagen verfügbar</td></tr>';
+      return;
+    }
+
+    // numeric safety
+    rows = rows.map(r => {
+      r.p_up = Number(r.p_up) || 0;
+      r.risk_score = Number(r.risk_score) || 9999;
+      return r;
+    });
+
+    // sortieren
+    rows.sort((a,b) => {
+      if(b.p_up !== a.p_up) return b.p_up - a.p_up;
+      return (a.risk_score||9999) - (b.risk_score||9999);
+    });
+
+    const top = rows.slice(0,30);
+
+    for(let i=0;i<top.length;i++){
+      const r = top[i];
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${i+1}</td>
+        <td>${r.symbol||''}</td>
+        <td>${(r.p_up===undefined)?'—':(Number(r.p_up).toFixed(3))}</td>
+        <td>${(r.risk_score===undefined)?'—':r.risk_score}</td>
+        <td>${r.strength||''}</td>
+        <td>${r.date||''}</td>`;
+      tbody.appendChild(tr);
+    }
+
+  }catch(e){
+    console.error('loadPredictions error', e);
+    const tbody = document.getElementById('top-tbody');
+    tbody.innerHTML = '<tr><td colspan="6">Fehler beim Laden</td></tr>';
+  }
+}
+
+setInterval(loadPredictions, 20000);
+loadPredictions();
+
 </script>
+
 </body>
 </html>
