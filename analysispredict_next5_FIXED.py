@@ -75,14 +75,14 @@ except Exception:
 # -----------------------------
 CONFIG = {
     # Data selection
-    "max_tickers_analysis": 150,     # how many tickers to analyze (can be all)
-    "max_news_tickers": 30,          # limit for news fetching (to save rate/ram)
-    "years_back": 1,                 # history horizon (1 = 1 year)
+    "max_tickers_analysis": 490,     # how many tickers to analyze (can be all)
+    "max_news_tickers": 490,          # limit for news fetching (to save rate/ram)
+    "years_back": 5,                 # history horizon (1 = 1 year)
     "start_date": None,              # optional fixed start date string "YYYY-MM-DD"
 
     # Models / training
-    "use_optuna": False,
-    "train_rnn": False,              # keep False: no TF
+    "use_optuna": True,
+    "train_rnn": True,              # keep False: no TF
     "seq_len": 20,
     "epochs": 8,
     "batch_size": 64,
